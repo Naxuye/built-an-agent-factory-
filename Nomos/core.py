@@ -18,8 +18,8 @@ WORKSPACE   = NOMOS_DIR.parent
 AGENT_ROOT  = os.getenv("NAXUYE_WORKSPACE", str(WORKSPACE / "agent_factory"))
 
 # 把项目根目录加入 Python 路径
-sys.path.insert(0, str(WORKSPACE.parent))  # E:\naxuye-agent
-sys.path.insert(0, str(WORKSPACE))         # E:\naxuye-agent\workspace
+sys.path.insert(0, str(WORKSPACE.parent))  
+sys.path.insert(0, str(WORKSPACE))         
 
 # ── 加载环境变量 ──────────────────────────────────────────────
 dotenv_path = WORKSPACE.parent / ".env"
