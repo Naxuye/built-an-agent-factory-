@@ -1,0 +1,39 @@
+{
+    "bilingual_translator_agent": {
+        "name": "bilingual_translator_agent",
+        "path": "E:\\naxuye-agent\\workspace\\agent_factory\\bilingual_translator_agent_SAFE_203232",
+        "version": "1.0.0",
+        "entry": "config.py",
+        "keywords": [
+            "翻译",
+            "translate",
+            "翻译一下",
+            "translation",
+            "英译中",
+            "中译英",
+            "英文翻译",
+            "中文翻译"
+        ],
+        "quality_score": 100,
+        "provider": "Zhipu",
+        "components": [
+            {
+                "file": "config.py",
+                "tier": "UNKNOWN",
+                "provider": "Zhipu"
+            },
+            {
+                "file": "translation_engine.py",
+                "tier": "UNKNOWN",
+                "provider": "Zhipu"
+            }
+        ],
+        "input_schema": {
+            "text": "The text content that needs to be translated (Chinese or English)"
+        },
+        "status": "READY",
+        "registered_at": "2026-03-19 20:32:33",
+        "last_run": "2026-03-19 20:33:03",
+        "run_count": 1
+    }
+}
