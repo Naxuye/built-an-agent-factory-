@@ -1,0 +1,17 @@
+naxuye_pro/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+logs/
+naxuye_memory.db
+新建文件夹/
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+workspace/agent_factory/
+workspace/logs/
+workspace/nomos/agent_map.json
+workspace/nomos/nomos.log

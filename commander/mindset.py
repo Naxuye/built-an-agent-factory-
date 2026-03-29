@@ -1,15 +1,20 @@
 # filename: commander/mindset.py
 import os
+import re
+from dotenv import load_dotenv
+load_dotenv(override=True)
 import json
 import shutil
 import subprocess
 import threading
 from datetime import datetime
 from commander.logic_core_extractor import extract_core_logic
+from Nomos.registry import register_agent
 
 signing_lock = threading.Lock()
 
-def _generate_manifest(project_id: str, assets: list, provider: str, score: int) -> dict:
+def _generate_manifest(project_id: str, assets: list, provider: str, score: int,
+                        input_schema: dict = None, trigger_keywords: list = None) -> dict:
     """生成 agent_manifest.json，供管家调用索引"""
     components = []
     for asset in assets:
@@ -22,15 +27,46 @@ def _generate_manifest(project_id: str, assets: list, provider: str, score: int)
         "name": project_id,
         "version": "1.0.0",
         "build_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "entry": "main.py",
-        "trigger_keywords": [],
-        "input_schema": {"input": "str"},
+        "entry": next((a['path'] for a in assets if os.path.basename(a['path']) == 'main.py'), assets[0]['path'] if assets else "main.py"),
+        "trigger_keywords": trigger_keywords or [],
+        "input_schema": input_schema or {"input": "str"},
         "output_schema": {"result": "str"},
         "components": components,
         "quality_score": score,
         "provider": provider,
         "status": "READY"
     }
+
+def _generate_requirements(assets: list) -> str:
+    """扫描代码提取第三方依赖，生成 requirements.txt"""
+    stdlib = {
+        "os", "sys", "json", "time", "re", "asyncio", "logging", "datetime",
+        "threading", "shutil", "subprocess", "hashlib", "copy", "typing",
+        "enum", "tempfile", "pathlib", "collections", "functools", "itertools"
+    }
+    found = set()
+    import_re = re.compile(r'^\s*(?:import|from)\s+([\w]+)', re.MULTILINE)
+    for asset in assets:
+        for match in import_re.finditer(asset.get("content", "")):
+            pkg = match.group(1)
+            if pkg not in stdlib:
+                found.add(pkg)
+
+    # 常见包名映射（import名 → pip包名）
+    pkg_map = {
+        "aiohttp": "aiohttp",
+        "requests": "requests",
+        "dotenv": "python-dotenv",
+        "bs4": "beautifulsoup4",
+        "tavily": "tavily-python",
+        "openai": "openai",
+        "anthropic": "anthropic",
+    }
+    lines = ["# 由 Naxuye 工厂自动生成", "# 请根据实际版本调整"]
+    for pkg in sorted(found):
+        lines.append(pkg_map.get(pkg, pkg))
+    return "\n".join(lines) + "\n"
+
 
 def _generate_readme(project_id: str, assets: list, score: int) -> str:
     """生成 README.md，供管家和开发者阅读"""
@@ -61,8 +97,8 @@ result = await run({{"input": "你的指令"}})
 
 def mindset_logic(state: dict):
     """
-    Naxuye 物理落盘与工厂归档器 (V5.7 统一归档版)
-    职责：人工终审、去重抛光、物理归档、生成 manifest 和 README
+    Naxuye 物理落盘与工厂归档器 (V5.8 PostChecker 增强版)
+    职责：人工终审、静态校验、去重抛光、物理归档、生成 manifest 和 README
     """
     report = state.get("audit_report", {})
     score = report.get("score", 0)
@@ -95,21 +131,36 @@ def mindset_logic(state: dict):
             else:
                 confirm = input("👉 审计合格。确认物理归档吗？(Y/n): ").strip().lower()
 
-    if confirm in ["y", "yes", "", "force", "FORCE"]:
+    # 判断是否签署（两条链路逻辑分离）
+    if auto_approve:
+        # Nomos 链路：score >= 80 自动通过，否则自动拒绝
+        approved = (score >= 80)
+    else:
+        # main.py 链路：按人工输入决定
+        if score >= 80:
+            approved = confirm not in ["n", "no"]        # Enter 默认通过
+        else:
+            approved = confirm.upper() == "FORCE"        # 必须显式 FORCE 才签署
+
+    if approved:
+
         try:
             polished_assets = extract_core_logic(passed_assets)
         except Exception as e:
             print(f"⚠️ [Mindset] 代码抛光失败: {e}，使用原始资产")
             polished_assets = passed_assets
 
-        # 项目 ID：用第一个组件名，去掉扩展名
-        if polished_assets:
+        # 读取注册元信息（Planner 生成）
+        agent_name_from_state = state.get("agent_name", "").strip()
+        if agent_name_from_state:
+            project_id = agent_name_from_state
+        else:
             base_ref = os.path.basename(polished_assets[0]['path'])
             project_id = os.path.splitext(base_ref)[0]
-        else:
-            project_id = "unknown_project"
 
-        # 统一归档路径（不再有 temp 中转）
+        input_schema = state.get("input_schema") or {"input": "str"}
+        trigger_keywords = state.get("trigger_keywords") or []
+
         workspace = os.getenv("NAXUYE_WORKSPACE", os.path.join(os.path.expanduser("~"), "naxuye-workspace", "agent_factory"))
         tag = "SAFE" if score >= 80 else "RISK"
         timestamp = datetime.now().strftime("%H%M%S")
@@ -119,13 +170,12 @@ def mindset_logic(state: dict):
             if os.path.exists(dest_path):
                 shutil.rmtree(dest_path)
 
-            # 创建标准目录结构
             for sub in ['', 'in', 'out', 'data']:
                 os.makedirs(os.path.join(dest_path, sub), exist_ok=True)
 
-            # 写入所有组件代码
             for file in polished_assets:
-                safe_path = file['path'].strip().replace(" ", "_")
+                # 只取文件名，去掉 Planner 可能生成的子目录前缀（如 strategic/）
+                safe_path = os.path.basename(file['path'].strip()).replace(" ", "_")
                 file_path = os.path.join(dest_path, safe_path)
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
                 with open(file_path, "w", encoding="utf-8") as f:
@@ -135,21 +185,50 @@ def mindset_logic(state: dict):
                 except:
                     pass
 
-            # 生成 agent_manifest.json
-            manifest = _generate_manifest(project_id, polished_assets, provider, score)
+            # 生成 agent_manifest.json（附上 PostChecker 得分）
+            manifest = _generate_manifest(project_id, polished_assets, provider, score,
+                                          input_schema=input_schema,
+                                          trigger_keywords=trigger_keywords)
             with open(os.path.join(dest_path, "agent_manifest.json"), "w", encoding="utf-8") as f:
                 json.dump(manifest, f, indent=4, ensure_ascii=False)
 
-            # 生成 README.md
             readme = _generate_readme(project_id, polished_assets, score)
             with open(os.path.join(dest_path, "README.md"), "w", encoding="utf-8") as f:
                 f.write(readme)
 
-            # 生成 signal.flag
+            # 生成 requirements.txt
+            requirements = _generate_requirements(polished_assets)
+            with open(os.path.join(dest_path, "requirements.txt"), "w", encoding="utf-8") as f:
+                f.write(requirements)
+
             with open(os.path.join(dest_path, "signal.flag"), "w", encoding="utf-8") as f:
                 f.write("READY")
 
             print(f"🌟 [Mindset] 签署成功！全量资产已归档：{dest_path}")
+
+            # 自动注册到 Nomos
+            try:
+                from Nomos.registry import register_agent
+                manifest_path = os.path.join(dest_path, "agent_manifest.json")
+                if os.path.exists(manifest_path):
+                    register_agent(manifest_path)
+            except Exception as e:
+                print(f"⚠️ [Mindset] Nomos 注册失败（不影响归档）: {e}")
+
+            # 记录生产历史（含 Planner 完整输出，供工厂级记忆使用）
+            try:
+                from configs.error_memory import record_production
+                import json as _json
+                plan_data = state.get("plan", {})
+                record_production(
+                    agent_name=project_id,
+                    status="SUCCESS",
+                    components=[a['path'] for a in polished_assets],
+                    planner_output=_json.dumps(plan_data, ensure_ascii=False)[:2000],
+                    score=score
+                )
+            except Exception:
+                pass
 
             return {
                 "final_decision": "APPROVED",
@@ -161,8 +240,32 @@ def mindset_logic(state: dict):
             print(f"❌ [Mindset] 物理落盘失败: {e}")
             import traceback
             traceback.print_exc()
+
+            # 记录失败
+            try:
+                from configs.error_memory import record_production
+                record_production(
+                    agent_name=project_id if 'project_id' in dir() else "unknown",
+                    status="FAILED",
+                    score=score
+                )
+            except Exception:
+                pass
+
             return {"final_decision": "ERROR"}
 
     else:
         print(f"🚫 [Mindset] 拒绝签署。组件发回重工循环。")
+
+        # 记录拒绝
+        try:
+            from configs.error_memory import record_production
+            record_production(
+                agent_name=state.get("agent_name", "unknown"),
+                status="REJECTED",
+                score=score
+            )
+        except Exception:
+            pass
+
         return {"final_decision": "REJECTED"}

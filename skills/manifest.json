@@ -1,0 +1,78 @@
+{
+    "version": "1.0.0",
+    "description": "Naxuye Skill 清单 — 供 Planner 和 agent_builder 参考",
+    "skills": [
+        {
+            "name": "http_request",
+            "description": "发送 HTTP 请求（GET/POST/PUT/DELETE），带超时和重试",
+            "replaces": ["requests", "urllib", "httpx", "aiohttp"],
+            "params": [
+                {"name": "url", "type": "str", "required": true},
+                {"name": "method", "type": "str", "default": "GET"},
+                {"name": "headers", "type": "dict", "default": null},
+                {"name": "params", "type": "dict", "default": null},
+                {"name": "json_data", "type": "dict", "default": null},
+                {"name": "timeout", "type": "int", "default": 30},
+                {"name": "retries", "type": "int", "default": 2}
+            ],
+            "returns": "{'status': 'success', 'status_code': 200, 'body': ..., 'headers': ...}",
+            "usage_example": "from skills.http_request import call; result = await call(url='https://api.example.com/data')"
+        },
+        {
+            "name": "llm_call",
+            "description": "调用 LLM API（支持 dashscope/deepseek/zhipuai/chaosuan）",
+            "replaces": ["openai", "anthropic", "dashscope"],
+            "params": [
+                {"name": "prompt", "type": "str", "required": true},
+                {"name": "provider", "type": "str", "default": "dashscope"},
+                {"name": "model", "type": "str", "default": null},
+                {"name": "system_prompt", "type": "str", "default": ""},
+                {"name": "temperature", "type": "float", "default": 0.7},
+                {"name": "max_tokens", "type": "int", "default": 2000},
+                {"name": "timeout", "type": "int", "default": 60}
+            ],
+            "returns": "{'status': 'success', 'content': 'LLM回复文本', 'model': ..., 'usage': ...}",
+            "usage_example": "from skills.llm_call import call; result = await call(prompt='你好', provider='deepseek')"
+        },
+        {
+            "name": "file_io",
+            "description": "文件读写（read/write/append/exists/list_dir），带路径安全校验",
+            "replaces": [],
+            "params": [
+                {"name": "action", "type": "str", "required": true},
+                {"name": "path", "type": "str", "required": true},
+                {"name": "content", "type": "str", "default": ""},
+                {"name": "encoding", "type": "str", "default": "utf-8"},
+                {"name": "as_json", "type": "bool", "default": false}
+            ],
+            "returns": "{'status': 'success', 'result': ...}",
+            "usage_example": "from skills.file_io import call; result = await call(action='read', path='data.txt')"
+        },
+        {
+            "name": "web_scraper",
+            "description": "网页抓取，提取文本/链接/CSS选择器内容",
+            "replaces": ["bs4", "beautifulsoup4", "scrapy", "lxml"],
+            "params": [
+                {"name": "url", "type": "str", "required": true},
+                {"name": "extract", "type": "str", "default": "text"},
+                {"name": "selector", "type": "str", "default": null},
+                {"name": "timeout", "type": "int", "default": 30}
+            ],
+            "returns": "{'status': 'success', 'result': '提取的内容', 'url': ...}",
+            "usage_example": "from skills.web_scraper import call; result = await call(url='https://example.com', extract='text')"
+        },
+        {
+            "name": "json_parser",
+            "description": "JSON 解析/提取/验证，容错处理 LLM 输出的非标准 JSON",
+            "replaces": [],
+            "params": [
+                {"name": "action", "type": "str", "default": "parse"},
+                {"name": "text", "type": "str", "default": ""},
+                {"name": "data", "type": "any", "default": null},
+                {"name": "path", "type": "str", "default": null}
+            ],
+            "returns": "{'status': 'success', 'result': ...}",
+            "usage_example": "from skills.json_parser import call; result = await call(action='parse', text='{\"key\": \"value\"}')"
+        }
+    ]
+}

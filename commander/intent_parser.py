@@ -15,8 +15,6 @@ def intent_parser(state: dict):
     return {
         **state, 
         "input": f"【NAXUYE 核心指令】：{clean_task}",
-        "is_refined": True,
-        # 🚀 损管初始化：确保即使第一轮运行，这些 Key 也存在
         "passed_slots": state.get("passed_slots", []),
         "audit_report": state.get("audit_report", {"score": 100, "error_type": "NONE"}),
         "retry_count": state.get("retry_count", 0),

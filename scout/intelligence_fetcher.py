@@ -10,9 +10,9 @@ from tavily import TavilyClient
 
 # 1. 核心配置与算力并网
 try:
-    from configs.naxuye_config_v26 import POWER_GRID
+    from configs.naxuye_config_v26 import get_power_grid
 except ImportError:
-    POWER_GRID = {}
+    get_power_grid = lambda: {}
 
 from commander.api_router import smart_dispatch
 
@@ -63,20 +63,15 @@ async def intelligence_fetcher(state: Dict[str, Any]):
     print(f"📡 [Scout] 启动全维度探针，维度数: {len(search_queries)}...")
 
     # --- [2. 物理 Key 与配置读取] ---
-    scout_cfg = POWER_GRID.get("GLOBAL_SCOUT", {})
+    scout_cfg = get_power_grid().get("GLOBAL_SCOUT", {})
     tavily_key = scout_cfg.get("tavily_key") or os.getenv("TAVILY_API_KEY")
 
     if not tavily_key:
         print("⚠️ [Scout] 雷达静默：未检测到 TAVILY_API_KEY。")
         log_telemetry("Scout", "TAVILY", "SILENT", "Missing API Key")
         return {
-            "intelligence": current_intel + "\n【系统通知】：Tavily 雷达静默。",
-            "audit_report": {
-                "error_type": "SCOUT_CONFIG_ERROR",
-                "score": 0,
-                "failed_count": 1
-            },
-            "retry_count": 1
+            "intelligence": current_intel + "\n【系统通知】：Tavily 雷达静默，情报缺失，流程继续。",
+            "scout_report": {"scout_status": "SILENT"}
         }
 
     try:
@@ -125,10 +120,7 @@ async def intelligence_fetcher(state: Dict[str, Any]):
         
         return {
             "intelligence": new_intel,
-            "audit_report": {
-                "scout_status": "SUCCESS",
-                "score": 100  # 侦察成功不影响整体评分
-            }
+            "scout_report": {"scout_status": "SUCCESS"}
         }
 
     except Exception as e:
@@ -138,12 +130,6 @@ async def intelligence_fetcher(state: Dict[str, Any]):
         
         # 🚨 双质检对齐：返回错误状态
         return {
-            "intelligence": current_intel + f"\n【实时情报】：外部雷达受损 ({error_msg})。",
-            "audit_report": {
-                "error_type": "SCOUT_FAILURE",
-                "score": 0,
-                "failed_count": 1,
-                "details": error_msg
-            },
-            "retry_count": 1  # 触发重试机制
+            "intelligence": current_intel + f"\n【实时情报】：外部雷达受损 ({error_msg})，情报缺失，流程继续。",
+            "scout_report": {"scout_status": "FAILED", "details": error_msg[:100]}
         }

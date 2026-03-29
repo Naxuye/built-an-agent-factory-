@@ -2,13 +2,9 @@
 # filename: commander/api_router.py
 import os
 import json
-import aiohttp
+import re
 import asyncio
 from typing import Dict, Any, Optional
-from dotenv import load_dotenv
-
-# 加载环境变量
-load_dotenv(r"E:\naxuye-agent\.env", override=True)
 
 # 导入智能路由适配器
 try:
@@ -54,9 +50,9 @@ async def call_deepseek(prompt: str, system_prompt: str = "", model: str = "deep
 
 async def call_zhipu(prompt: str, system_prompt: str = "", model: str = "glm-4-plus", **kwargs):
     """调用智谱 API"""
-    api_key = os.getenv("ZHIPU_API_KEY")
+    api_key = os.getenv("ZHIPUAI_API_KEY")
     if not api_key:
-        raise Exception("ZHIPU_API_KEY 未配置")
+        raise Exception("ZHIPUAI_API_KEY 未配置")
     
     url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
     
@@ -86,9 +82,9 @@ async def call_zhipu(prompt: str, system_prompt: str = "", model: str = "glm-4-p
 
 async def call_aliyun(prompt: str, system_prompt: str = "", model: str = "qwen-max", **kwargs):
     """调用阿里云百炼 API"""
-    api_key = os.getenv("ALIYUN_API_KEY")
+    api_key = os.getenv("DASHSCOPE_API_KEY")
     if not api_key:
-        raise Exception("ALIYUN_API_KEY 未配置")
+        raise Exception("DASHSCOPE_API_KEY 未配置")
     
     url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     
@@ -114,7 +110,8 @@ async def call_aliyun(prompt: str, system_prompt: str = "", model: str = "qwen-m
         response = await client.post(url, json=payload, headers=headers)
         response.raise_for_status()
         result = response.json()  # ✅ 修复：去掉 await
-        return result['choices'][0]['message']['content']  # ✅ 修复：统一用 compatible-mode 响应格式
+        return result['choices'][0]['message']['content']
+
 
 async def smart_dispatch(
     prompt: str,
@@ -158,7 +155,7 @@ async def smart_dispatch(
             result = await call_aliyun(
                 prompt=prompt,
                 system_prompt=system_prompt,
-                model=model or "qwen-max"
+                model=model or "qwen3.5-plus"
             )
         else:
             # 默认使用 DeepSeek
@@ -175,7 +172,6 @@ async def smart_dispatch(
                 json.loads(result)
                 return result
             except:
-                import re
                 json_match = re.search(r'\{.*\}', result, re.DOTALL)
                 if json_match:
                     return json_match.group()

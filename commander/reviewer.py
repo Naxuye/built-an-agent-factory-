@@ -6,16 +6,17 @@ import re
 import asyncio  
 import copy    
 from configs.resource_grid import TIMEOUTS
+from commander.post_checker import check_assets  # 🚨 新增导入
 
 # --- 1. 核心算力并网 (V26 协议) ---
 try:
-    from configs.naxuye_config_v26 import POWER_GRID
+    from configs.naxuye_config_v26 import get_power_grid
 except ImportError:
-    POWER_GRID = {}
+    get_power_grid = lambda: {}
 
 from commander.api_router import smart_dispatch
 
-# 🚨 3. 添加轮询计数器
+# 🚨 轮询计数器
 _reviewer_index = 0
 
 def physical_syntax_check(filename: str, code: str):
@@ -41,12 +42,12 @@ async def reviewer_node(state: dict):
     """
     Naxuye 审计节点 V5.5 (损管分拣与算力透传版)
     """
-    global _reviewer_index  # 🚨 4. 声明全局变量
+    global _reviewer_index  # 声明全局变量
     
-    # 🚨 5. 轮询选择审计节点
+    # 轮询选择审计节点
     try:
-        from configs.naxuye_config_v26 import POWER_GRID
-        nodes = POWER_GRID.get("ENGINEERING", [])
+        from configs.naxuye_config_v26 import get_power_grid
+        nodes = get_power_grid().get("ENGINEERING", [])
         if nodes:
             active_node = copy.deepcopy(nodes[_reviewer_index % len(nodes)])
             _reviewer_index += 1
@@ -55,7 +56,7 @@ async def reviewer_node(state: dict):
     except Exception:
         active_node = state.get("active_node")
     
-    # 🚨 [新增]：检查 Planner 是否有错误
+    # 检查 Planner 是否有错误
     plan = state.get("plan", {})
     if plan.get("error"):
         print(f"🚨 [Reviewer] 检测到 Planner 错误: {plan['error']}")
@@ -65,15 +66,14 @@ async def reviewer_node(state: dict):
                 "error_type": "PLANNER_FAILURE",
                 "failed_count": 1,
                 "summary": f"Planner 错误: {plan['error']}"
-            },
-            "retry_count": 1
+            }
         }
     
     drafts = state.get("draft", []) # 本轮 Pillow 新产出的
     # 获取历史上已经过审的资产
     history_passed = state.get("passed_slots", []) or []
     
-    # 🚀 损管识别：检查 Pillow 是否上报了“红线错误”
+    # 损管识别：检查 Pillow 是否上报了“红线错误”
     pilllow_report = state.get("audit_report", {})
     if pilllow_report.get("error_type") == "SAFETY_INTERCEPT":
         print("🚩 [Reviewer] 检测到生产端红线拦截，直接触发损管路由。")
@@ -87,7 +87,14 @@ async def reviewer_node(state: dict):
 
     if not drafts:
         print("💡 [Reviewer] 本轮无新产出（可能已全部过审）。")
-        return {"audit_report": {"score": 100, "summary": "资产已齐备"}}
+        return {
+            "audit_report": {
+                "score": 100,
+                "summary": "资产已齐备",
+                "failed_count": 0,   # 清除遗留的 failed_count，避免死循环
+                "error_type": ""
+            }
+        }
 
     # 1. 物理质检
     pre_check_results = {}
@@ -96,6 +103,10 @@ async def reviewer_node(state: dict):
         is_ok, err_msg = physical_syntax_check(d['path'], d['content'])
         pre_check_results[d['path']] = {"ok": is_ok, "msg": err_msg}
         if not is_ok: has_physical_error = True
+
+    # 🚨 新增：PostChecker 静态校验
+    post_check = check_assets(drafts)
+    post_check_summary = "\n".join(post_check["all_issues"]) if post_check["all_issues"] else "静态校验全部通过。"
 
     # 2. 准备审计上下文
     content_snapshot = "\n".join([f"--- FILE: {d['path']} ---\n{d['content']}" for d in drafts])
@@ -119,6 +130,7 @@ async def reviewer_node(state: dict):
         "  - 错误处理是否统一返回 {'error': ..., 'status': 'failed'}\n"
         "  - 是否有日志记录\n\n"
         f"【物理反馈】：{syntax_warnings if syntax_warnings else '语法校验通过。'}\n"
+        f"【静态校验反馈】：{post_check_summary}\n"  # 🚨 新增行
         "【输出要求】：必须返回 JSON: { \"score\": 分数, \"passed_list\": [\"文件名\"], \"advice\": \"建议\" }"
     )
 
@@ -126,7 +138,7 @@ async def reviewer_node(state: dict):
     print(f"🔬 [Reviewer] 正在执行深度代码审计... [算力驱动: {provider_label}]")
 
     try:
-        # 🚨 [关键注入 2]：将钥匙喂给智能路由，并增加超时保护
+        # 将钥匙喂给智能路由，并增加超时保护
         res_json = await asyncio.wait_for(
             smart_dispatch(
                 prompt=f"待审组件内容：\n{content_snapshot}",
@@ -157,29 +169,53 @@ async def reviewer_node(state: dict):
         if has_physical_error: score = min(score, 40)
         report["score"] = score
 
+        # 记录审计建议到纠错系统
+        advice = report.get("advice", "")
+        if advice and score < 80:
+            try:
+                from configs.error_memory import record_error, ErrorSource
+                record_error(
+                    pattern_type="LOGIC_ERROR",
+                    pattern_detail=advice[:200],
+                    source=ErrorSource.REVIEWER.value,
+                    related_tier="GENERAL"
+                )
+            except Exception:
+                pass
+
         print(f"⭐ [Audit] 评分: {score} | 本轮新增: {len(newly_passed_assets)} 个组件")
         
-        # 🚨 [关键对齐]：构造返回字典
+        # 构造返回字典：passed_slots 累积历史 + 本轮新增
+        all_passed = list({a['path']: a for a in (history_passed + newly_passed_assets)}.values())
         return_update = {
             "audit_report": report,
-            "passed_slots": newly_passed_assets # Workflow 会自动 add 累加
+            "passed_slots": all_passed
         }
 
-        # 🚨 [关键补丁]：如果分数不达标，通过返回 retry_count 让 Workflow 自动 +1
         if score < 80:
-            return_update["retry_count"] = 1 # 触发 operator.add 机制
+            pass  # retry_count 由 wrapper 统一管理
+        else:
+            report["failed_count"] = 0
             
         return return_update
 
     except asyncio.TimeoutError:
         print(f"⏰ [Reviewer] 审计超时（300秒）")
+        try:
+            from configs.error_memory import record_error, ErrorSource
+            record_error(
+                pattern_type="TIMEOUT",
+                pattern_detail="Reviewer 审计超时（300秒）",
+                source=ErrorSource.REVIEWER.value,
+                related_tier="GENERAL"
+            )
+        except Exception:
+            pass
         return {
-            "audit_report": {"score": 0, "error_type": "REVIEW_TIMEOUT", "summary": "审计超时"},
-            "retry_count": 1
+            "audit_report": {"score": 0, "error_type": "REVIEW_TIMEOUT", "summary": "审计超时"}
         }
     except Exception as e:
         print(f"⚠️ [Reviewer] 审计故障: {e}")
         return {
-            "audit_report": {"score": 0, "summary": f"审计链路异常: {e}"},
-            "retry_count": 1 # 故障也视为一次尝试
+            "audit_report": {"score": 0, "summary": f"审计链路异常: {e}"}
         }

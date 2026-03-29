@@ -28,11 +28,7 @@ def extract_core_logic(drafts: list):
         content = re.sub(r'^```\w*\n?', '', content, flags=re.MULTILINE)
         content = re.sub(r'\n```$', '', content, flags=re.MULTILINE)
         content = content.replace('```', '')
-        
-        # 2. 移除可能残留的 # filename: 标记，防止落盘后内容冗余
-        content = re.sub(r'#\s*filename:.*?\n', '', content, flags=re.IGNORECASE)
-        content = content.strip()
-        
+                
         # 3. 注入 2026 工业资产水印（避免重复注入）
         header = (
             f'# -*- coding: utf-8 -*-\n'
@@ -51,8 +47,8 @@ def extract_core_logic(drafts: list):
             print(f"   ↳ 检测到已存在水印，跳过重复注入")
             processed_content = content
         
-        # 4. 路径安全化（防止目录遍历）
-        safe_path = path.replace("..", "_").replace("/", "_").replace("\\", "_")
+        # 4. 路径安全化（防止目录遍历，保留原始文件名用于分批去重）
+        safe_path = path.replace("..", "_")
         
         processed_results.append({
             "path": safe_path,

@@ -35,14 +35,14 @@ async def get_smart_client(url: str = None):
         print(f"📡 [Router] 检测到国内节点 {domain}，已强制启用【物理直连】模式")
         return httpx.AsyncClient(
             trust_env=False, 
-            timeout=httpx.Timeout(60.0, connect=10.0),
+            timeout=httpx.Timeout(120.0, connect=15.0),
             follow_redirects=True
         )
     else:
         print(f"🌐 [Router] 检测到海外节点 {domain}，已启用【VPN 链路】模式")
         return httpx.AsyncClient(
             trust_env=True, 
-            timeout=httpx.Timeout(60.0, connect=15.0),
+            timeout=httpx.Timeout(120.0, connect=15.0),
             follow_redirects=True
         )
 

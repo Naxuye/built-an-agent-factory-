@@ -6,7 +6,7 @@ import sys
 from dotenv import load_dotenv
 
 # 🚨 暴力锁定：直接指定 E 盘根目录下的 .env，彻底解决“环境漂移”
-env_path = r"E:\naxuye-agent\.env"
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
 if os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path, override=True)  # 强制覆盖所有环境变量
     
@@ -84,12 +84,20 @@ async def main():
             "chat_history": [],
             "plan": {},
             "intelligence": "",
-            "active_node": {},  # 🚨 [核心修复]：这里就是承载 Dispatcher 算力钥匙的物理容器
-            "draft": [],      # 对应 Pillow 的输出
-            "passed_slots": [], # 对应 Reviewer 的存留
+            "active_node": {},
+            "draft": [],
+            "passed_slots": [],
             "audit_report": {"score": 0, "advice": "", "error_type": "NONE"},
             "retry_count": 0,
-            "final_decision": ""
+            "error_log": [],
+            "final_path": "",
+            "final_decision": "",
+            "target_components": [],
+            "batch_retry_count": 0,
+            "agent_name": "",
+            "input_schema": {},
+            "trigger_keywords": [],
+            "test_cases": []
         }
 
         console.print("\n[bold red]👁️  正在剥离现实，算力矩阵正在重构逻辑...[/bold red]")
@@ -121,8 +129,16 @@ async def main():
                         
                         console.print(f"    ┗ {status} 逻辑纯度: {score} | 重试次数: {retry_count}")
                     
-                    # 🚨 实时捕捉 Logistic 传递的路径简报
-                    if node_name == "logistic_agent":
+                    # 冒烟测试结果反馈
+                    if node_name == "smoke_test":
+                        report = state_update.get("audit_report", {})
+                        if report.get("error_type") == "SMOKE_TEST_FAILURE":
+                            console.print(f"    ┗ [bold white on red] SMOKE TEST FAILED [/bold white on red] {report.get('summary', '')}")
+                        else:
+                            console.print(f"    ┗ [bold white on green] SMOKE TEST PASSED [/bold white on green]")
+
+                    # 实时捕捉 Logistic 传递的路径简报
+                    if node_name == "logistic":
                         report_text = state_update.get("final_decision", "")
                         console.print(Panel(f"[bold red]{report_text}[/bold red]", border_style="red"))
                         # ✅ 关键修复：更新 final_save_path
@@ -134,7 +150,7 @@ async def main():
         # 🚨 物理层路径兜底：如果 logistic 没返回路径，手动查找
         if not final_save_path:
             try:
-                factory_root = r"E:\naxuye-agent\workspace\agent_factory"
+                factory_root = os.getenv("NAXUYE_WORKSPACE", os.path.join(os.path.expanduser("~"), "naxuye-workspace", "agent_factory"))
                 if os.path.exists(factory_root):
                     # 过滤出所有带 _SAFE 的文件夹并按修改时间排序
                     dirs = [os.path.join(factory_root, d) for d in os.listdir(factory_root) 
