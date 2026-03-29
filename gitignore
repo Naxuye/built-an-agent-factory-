@@ -1,0 +1,46 @@
+# Environment
+.env
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+naxuye_pro/
+
+# Database & debug
+naxuye_memory.db
+check_db.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Factory outputs
+agent_factory/
+
+# Nomos runtime
+workspace/Nomos/agent_map.json
+workspace/Nomos/nomos.log
+
+# Sandbox
+sandbox/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
