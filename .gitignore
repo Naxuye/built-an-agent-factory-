@@ -11,6 +11,7 @@ naxuye_memory.db
 Thumbs.db
 .vscode/
 .idea/
+check_db.py
 workspace/agent_factory/
 workspace/logs/
 workspace/nomos/agent_map.json
